@@ -2,6 +2,7 @@ import simpy
 import numpy
 import random
 from runstats import Statistics
+from Lab3.asset import *
 import matplotlib.pyplot as plt
 
 N_SERVERS = 5
@@ -9,7 +10,7 @@ RANDOM_SEED = 1
 MAX_CLIENT = 5  # max client per server
 SIM_TIME = 2
 total_users = 765367947 + 451347554 + 244090854 + 141206801 + 115845120
-arrival_rate_global = 100  # 100%, and after will be used to define the rate of arrival of each country
+arrival_rate_global = 10  # 100%, and after will be used to define the rate of arrival of each country
 nation_stats = {"china": 0, "usa": 0, "india": 0, "brazil": 0, "japan": 0, "total":0}
 
 def arrival(environment, nation, arrival_rate):
@@ -44,22 +45,23 @@ class Client(object):
         time_arrival = self.env.now
         print("client", self.client_id, "from ", self.nation, "has arrived at", time_arrival)
         print("client tot request: ", self.k)
-        string = nearest_servers(self.nation)  # A string with sorted servers according to the distances
-        print(string)
-        i = 0
-        # Try to find free servers if the closest one is already full
-        while dictionary_of_server[string[i]].servers.count == MAX_CLIENT:
-            i += 1
-            # If all the servers have been checked, then come back to the closest one and put the client in the queue
-            if i == N_SERVERS:
-                i = 0
-                break
-        print("Server Chosen: ", string[i])
-        print("Total Clients in the queue:", string[i], " : ", len(dictionary_of_server[string[i]].servers.queue))
-        print("Total clients in server " + string[i] + " : " + str(dictionary_of_server[string[i]].servers.count))
+
         for j in range(1, self.k+1):
-            pack_dim = round(random.expovariate(lambd=0.001))
+            pack_dim = random.randint(8000, 16000)
             print("client", self.client_id, " request number : ", j)
+            string = nearest_servers(self.nation)  # A string with sorted servers according to the distances
+            print(string)
+            i = 0
+            # Try to find free servers if the closest one is already full
+            while dictionary_of_server[string[i]].servers.count == MAX_CLIENT:
+                i += 1
+                # If all the servers have been checked, then come back to the closest one and put the client in the queue
+                if i == N_SERVERS:
+                    i = 0
+                    break
+            print("Server Chosen: ", string[i])
+            print("Total Clients in the queue:", string[i], " : ", len(dictionary_of_server[string[i]].servers.queue))
+            print("Total clients in server " + string[i] + " : " + str(dictionary_of_server[string[i]].servers.count))
             # The client goes to the first server to be served ,now is changed
             # until env.process is complete
             yield env.process(dictionary_of_server[string[i]].serve(pack_dim))
@@ -86,22 +88,10 @@ class Servers(object):
             service_time = pack_dim / shared_capacity
             print("shared capacity: ", shared_capacity)
             print("service time: ", service_time)
-
             # server is free, wait until service is finish
 
             # yield an event to the simulator
             yield self.env.timeout(service_time)
-
-def nearest_servers(id):
-    nations = ["china", "usa", "india", "japan", "brazil"]
-    index = nations.index(id)
-    distances = [[0, 4, 2, 1, 3],  [4, 0, 5, 3, 2], [1, 5, 0, 2, 6], [1, 3, 2, 0, 4], [3, 2, 4, 6, 0]]
-    list_nations = []
-    for i in range(len(nations)):
-        closest = nations[distances[index].index(min(distances[index]))]
-        list_nations.append(closest)
-        distances[index][distances[index].index(min(distances[index]))] += 10
-    return list_nations
 
 if __name__ == '__main__':
     nations = ["china", "usa", "india", "japan", "brazil"]
@@ -111,7 +101,7 @@ if __name__ == '__main__':
     client_id = 1
     random.seed(RANDOM_SEED)  # same sequence each time
 
-    max_capacity = 5e5  # diverso per ogni server
+    max_capacity = 10e8  # diverso per ogni server
     response_time = []
 
     # create lambda clients
