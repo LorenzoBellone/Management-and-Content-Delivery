@@ -8,3 +8,10 @@ def nearest_servers(id):
         list_nations.append(closest)
         distances[index][distances[index].index(min(distances[index]))] += 10
     return list_nations
+
+def RTT(server, client):
+    nations = ["china", "usa", "india", "japan", "brazil"]
+    distances = [[0, 4, 2, 1, 3], [4, 0, 5, 3, 2], [1, 5, 0, 2, 6], [1, 3, 2, 0, 4], [3, 2, 4, 6, 0]]
+    ind_server = nations.index(server)
+    ind_client = nations.index(client)
+    return distances[ind_server][ind_client]
