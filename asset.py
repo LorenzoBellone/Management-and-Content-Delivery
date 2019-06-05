@@ -24,22 +24,21 @@ def RTT(server, client):
     return distances[ind_server][ind_client]
 
 
-def global_service_times(server, dict, current_time, current_capacity):
-    for i in (dict[server]["current_requests"].keys()):
-        # The new packet dimension, equal to the previous dimension minus the amount of bits downloaded in the meantime
-        dict[server]["current_requests"][i][2] = dict[server]["current_requests"][i][2] - dict[server]["current_requests"][i][1]*(current_time - dict[server]["current_requests"][i][3])
-        # The new current time, referred to the last update of shared capacity
-        dict[server]["current_requests"][i][3] = current_time
-        # The new shared capacity for the packet
-        dict[server]["current_requests"][i][1] = current_capacity
-        # THe new service time, equal to the current dimension of the packet over the current shared capacity
-        dict[server]["current_requests"][i][0] = dict[server]["current_requests"][i][2]/dict[server]["current_requests"][i][1]
-        print("New service time for id", i, " : ", dict[server]["current_requests"][i][0])
+def global_service_times(server, dict, name_request, current_time, current_capacity):
+
+    # The new packet dimension, equal to the previous dimension minus the amount of bits downloaded in the meantime
+    dict[server]["current_requests"][name_request][2] = dict[server]["current_requests"][name_request][2] - dict[server]["current_requests"][name_request][1]*(current_time - dict[server]["current_requests"][name_request][3])
+    # The new current time, referred to the last update of shared capacity
+    dict[server]["current_requests"][name_request][3] = current_time
+    # The new shared capacity for the packet
+    dict[server]["current_requests"][name_request][1] = current_capacity
+    # THe new service time, equal to the current dimension of the packet over the current shared capacity
+    dict[server]["current_requests"][name_request][0] = dict[server]["current_requests"][name_request][2]/dict[server]["current_requests"][name_request][1]
+    print("New service time for id", name_request, " : ", dict[server]["current_requests"][name_request][0])
     return dict
 
 
 def evaluate_cost(last_update, time, server):
     costs = {"china": 0.104, "usa": 0.0976, "india": 0.0896, "japan" : 0.1088, "brazil" : 0.1344}
     return (time - last_update)*costs[server]
-
 
