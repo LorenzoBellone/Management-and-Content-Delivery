@@ -1,4 +1,5 @@
-
+import copy
+import random
 
 def nearest_servers(id):
     nations = ["china", "usa", "india", "japan", "brazil"]
@@ -34,7 +35,7 @@ def global_service_times(server, dict, name_request, current_time, current_capac
     dict[server]["current_requests"][name_request][1] = current_capacity
     # THe new service time, equal to the current dimension of the packet over the current shared capacity
     dict[server]["current_requests"][name_request][0] = dict[server]["current_requests"][name_request][2]/dict[server]["current_requests"][name_request][1]
-    print("New service time for id", name_request, " : ", dict[server]["current_requests"][name_request][0])
+    print("New service time for id", name_request, " : ", round(dict[server]["current_requests"][name_request][0], 5))
     return dict
 
 
@@ -42,3 +43,11 @@ def evaluate_cost(last_update, time, server):
     costs = {"china": 0.104, "usa": 0.0976, "india": 0.0896, "japan" : 0.1088, "brazil" : 0.1344}
     return (time - last_update)*costs[server]
 
+
+def arrival_function(time, nation, arrival_rate):
+    nation_timezone = {"china": 8, "usa": -5, "india": 5, "brazil": -3, "japan": 9}
+    if (time % 24) < (8 + nation_timezone[nation]) or (time % 24 > (20 + nation_timezone[nation])):
+        arrival_rate2 = copy.deepcopy(arrival_rate * random.uniform(0.05, 0.15))
+    else:
+        arrival_rate2 = copy.deepcopy(arrival_rate * random.uniform(0.8, 1.2))
+    return arrival_rate2
