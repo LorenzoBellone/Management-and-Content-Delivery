@@ -25,7 +25,8 @@ def arrival(environment, nation, arrival_rate):
         nation_stats[nation] += 1
         nation_stats["total"] = client_id
 
-        inter_arrival = random.expovariate(lambd=arrival_rate)
+        arrival_rate2 = arrival_function(env.now, nation, arrival_rate)
+        inter_arrival = random.expovariate(lambd=arrival_rate2)
 
         # yield an event to the simulator
         yield environment.timeout(inter_arrival)
@@ -37,9 +38,9 @@ def arrival(environment, nation, arrival_rate):
 
 class Client(object):
 
-    def __init__(self, environment, i="nations", client_id=0):
+    def __init__(self, environment, name_client="nations", client_id=0):
         self.env = environment
-        self.nation = i
+        self.nation = name_client
         self.client_id = client_id
         self.response_time = 0
         self.k = random.randint(1, 2)
@@ -49,7 +50,7 @@ class Client(object):
     def run(self):
         # store the absolute arrival time
         time_arrival = self.env.now
-        print("client", self.client_id, "from ", self.nation, "has arrived at", time_arrival)
+        print("client", self.client_id, "from ", self.nation, "wants to make requests at", round(time_arrival, 5))
         print("client tot request: ", self.k)
 
         for j in range(1, self.k + 1):
@@ -59,21 +60,33 @@ class Client(object):
             print(string)
             i = 0
             # Try to find free servers if the closest one is already full
-            while dictionary_of_server[string[i]].servers.count == MAX_CLIENT or supreme_dict[string[i]][
-                "online"] is False:
+            while supreme_dict[string[i]]["count"] == MAX_CLIENT or supreme_dict[string[i]]["online"] is False:
                 i += 1
                 # If all the servers have been checked, then come back to the closest one and put the client in the queue
                 if i == N_SERVERS:
                     i = 0
                     break
+            supreme_dict[string[i]]["count"] += 1
             print("Server Chosen: ", string[i])
             print("Total Clients in the queue:", string[i], " : ", len(dictionary_of_server[string[i]].servers.queue))
-            print("Total clients in server " + string[i] + " : " + str(dictionary_of_server[string[i]].servers.count))
+            print("Total clients in server " + string[i] + " : " + str(supreme_dict[string[i]]["count"]-1))
+            if supreme_dict[string[i]]["count"] == MAX_CLIENT - 1:
+                for j in nearest_servers(string[i]):
+                    if supreme_dict[j]["online"] is False:
+                        supreme_dict[j]["online"] = True
+                        print("Server", j, "went back online triggered by server", string[i])
+                        supreme_dict[j]["last_update"] = self.env.now
+                        break
+            roundtrip = RTT(string[i], self.nation) / (3 * 10e5)  # Latency due to RTT
+            latency = random.randint(10, 100) * 10e-3  # Latency of the server
+            print("Latency to reach the server: ", round(latency+roundtrip, 5))
+            yield self.env.timeout(roundtrip + latency)
             # The client goes to the first server to be served ,now is changed
             # until env.process is complete
             serve_customer = env.process(
                 dictionary_of_server[string[i]].serve(self.nation, j, self.client_id, pack_dim))
             yield serve_customer
+            supreme_dict[string[i]]["count"] -= 1
 
         self.response_time = self.env.now - time_arrival
         print("client", self.client_id, "from ", self.nation, "response time ", self.response_time)
@@ -87,59 +100,43 @@ class Servers(object):
         self.env = environment
         self.capacity = capacity
         self.servers = simpy.Resource(env, capacity=max_client)
-        self.client_arrive = self.env.event()
-        self.client_departure = self.env.event()
         # https://simpy.readthedocs.io/en/latest/simpy_intro/shared_resources.html
 
     def serve(self, name_client, req, client, pack_dim):
 
-        # def revaluate_times(event):
-        #     print("Hi")
-        #
-        # self.client_arrive.callbacks.append(revaluate_times(supreme_dict))
-
         # request a server
-        if self.servers.count == MAX_CLIENT - 1:
-            for i in nearest_servers(self.name_server):
-                if supreme_dict[i]["online"] is False:
-                    supreme_dict[i]["online"] = True
-                    print("Server", i, "went back online triggered by server", self.name_server)
-                    supreme_dict[i]["last_update"] = self.env.now
-                    break
-
         with self.servers.request() as request:  # create obj then destroy
             yield request
 
-            ok = 0
             name_request = "client_" + str(client) + "_req_" + str(req)
-            shared_capacity = self.capacity / self.servers.count
-            roundtrip = RTT(self.name_server, name_client) / (3 * 10e5)  # Latency due to RTT
-            latency = random.randint(10, 100) * 10e-3  # Latency of the server
-            yield self.env.timeout(roundtrip + latency)
-            if self.servers.count != 1:
-                self.client_arrive.succeed()
-
+            servers_arrival[self.name_server].succeed()
+            servers_arrival[self.name_server] = self.env.event()
             now = self.env.now
+            shared_capacity = self.capacity / self.servers.count
             service_time = pack_dim / shared_capacity
             print("shared capacity for", name_request, " : ", shared_capacity)
-            print("service time for", name_request, " : ", service_time, "Starting from ", self.env.now)
+            print("service time for", name_request, " : ", service_time, "Request arrived at the server at: ", round(self.env.now, 5))
             supreme_dict[self.name_server]["current_requests"][name_request] = [service_time, shared_capacity, pack_dim,
                                                                                 now]
-            while ok == 0:
+            go = False
+            while go is False:
                 now = self.env.now
                 new_supreme_dict = global_service_times(self.name_server, supreme_dict, name_request, now,
-                                                        self.capacity/self.servers.count)
+                                                        self.capacity / self.servers.count)
                 supreme_dict[self.name_server]["current_requests"][name_request] = \
                 new_supreme_dict[self.name_server]["current_requests"][name_request]
                 service_time = supreme_dict[self.name_server]["current_requests"][name_request][0]
-                if service_time < 0:
-                    service_time = 0
-                yield self.env.timeout(service_time) | self.client_arrive | self.client_departure
-                self.client_arrive = self.env.event()
-            print("The service time was ", service_time)
-            print("The client left the server in ", self.env.now - now)
-        self.client_departure.succeed()
-        self.client_departure = self.env.event()
+
+                yield self.env.timeout(service_time) | servers_arrival[self.name_server] | servers_departure[self.name_server]
+                if round((self.env.now - now), 5) < round(service_time, 5):
+                    print("A new client arrived or just went away, update needed for: ", name_request)
+                else:
+                    go = True
+            print("The service time for client", name_request, "was ", round(service_time, 5))
+            print("The client left the server in ", round(self.env.now - now, 5))
+
+        servers_departure[self.name_server].succeed()
+        servers_departure[self.name_server] = self.env.event()
 
         now = self.env.now
         supreme_dict[self.name_server]["tot_cost"] += evaluate_cost(supreme_dict[self.name_server]["last_update"], now,
@@ -152,11 +149,11 @@ class Servers(object):
 
 
 if __name__ == '__main__':
-    supreme_dict = {"china": {"tot_cost": 0, "last_update": 0, "online": False, "current_requests": {}},
-                    "usa": {"tot_cost": 0, "last_update": 0, "online": True, "current_requests": {}},
-                    "india": {"tot_cost": 0, "last_update": 0, "online": True, "current_requests": {}},
-                    "japan": {"tot_cost": 0, "last_update": 0, "online": False, "current_requests": {}},
-                    "brazil": {"tot_cost": 0, "last_update": 0, "online": False, "current_requests": {}}}
+    supreme_dict = {"china": {"tot_cost": 0, "last_update": 0, "online": False, "count":0, "current_requests": {}},
+                    "usa": {"tot_cost": 0, "last_update": 0, "online": True,"count":0, "current_requests": {}},
+                    "india": {"tot_cost": 0, "last_update": 0, "online": True,"count":0, "current_requests": {}},
+                    "japan": {"tot_cost": 0, "last_update": 0, "online": False,"count":0, "current_requests": {}},
+                    "brazil": {"tot_cost": 0, "last_update": 0, "online": False,"count":0, "current_requests": {}}}
     arrival_nations = {"china": round(765367947 / total_users, 2), "usa": round(451347554 / total_users, 2),
                        "india": round(244090854 / total_users, 2),
                        "brazil": round(141206801 / total_users, 2), "japan": round(115845120 / total_users, 2)}
@@ -176,8 +173,14 @@ if __name__ == '__main__':
         env.server = Servers(environment=env, max_client=MAX_CLIENT, capacity=max_capacity, name=i)
         dictionary_of_server[i] = env.server
 
-    # start the arrival process
 
+    servers_arrival = {}
+    servers_departure = {}
+    for i in supreme_dict.keys():
+        servers_arrival[i] = env.event()
+        servers_departure[i] = env.event()
+
+    # start the arrival process
     # technically, a process actually is an event. Example: process of parking a car.
     # https://simpy.readthedocs.io/en/latest/simpy_intro/process_interaction.html?highlight=process
     for i in supreme_dict.keys():
@@ -189,4 +192,5 @@ if __name__ == '__main__':
 
 # totally occupied servers in this case
 # we need parallel servers for example 5 servers for 5 continents
+
 
