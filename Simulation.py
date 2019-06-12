@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 # init
 N_SERVERS = 5
 RANDOM_SEED = 1
-MAX_CLIENT = 5  # max client per server
-SIM_TIME = 24  # 24 for each day
+MAX_CLIENT = 20  # max client per server
+SIM_TIME = 24*60*60  # 24 for each day
 total_users = 765367947 + 451347554 + 244090854 + 141206801 + 115845120
 arrival_rate_global = 10  # 100%, and after will be used to define the rate of arrival of each country
 nation_stats = {"china": 0, "usa": 0, "india": 0, "brazil": 0, "japan": 0, "total": 0}
@@ -22,8 +22,6 @@ def arrival(environment, nation, arrival_rate):
     # keep track of client number client id
     # arrival will continue forever
     while True:
-        nation_stats[nation] += 1
-        nation_stats["total"] = client_id
 
         arrival_rate2 = arrival_function(env.now, nation, arrival_rate)
         inter_arrival = random.expovariate(lambd=arrival_rate2)
@@ -43,21 +41,21 @@ class Client(object):
         self.nation = name_client
         self.client_id = client_id
         self.response_time = 0
-        self.k = random.randint(1, 2)
+        self.k = random.randint(10, 100)
         # the client is a "process"
         self.env.process(self.run())
 
     def run(self):
         # store the absolute arrival time
         time_arrival = self.env.now
-        print("client", self.client_id, "from ", self.nation, "wants to make requests at", round(time_arrival, 5))
-        print("client tot request: ", self.k)
+        #print("client", self.client_id, "from ", self.nation, "wants to make requests at", round(time_arrival, 5))
+        #print("client tot request: ", self.k)
 
         for j in range(1, self.k + 1):
             pack_dim = random.randint(8000, 16000)
-            print("client", self.client_id, " request number : ", j)
+            #print("client", self.client_id, " request number : ", j)
             string = nearest_servers(self.nation)  # A string with sorted servers according to the distances
-            print(string)
+            #print(string)
             i = 0
             # Try to find free servers if the closest one is already full
             while supreme_dict[string[i]]["count"] == MAX_CLIENT or supreme_dict[string[i]]["online"] is False:
@@ -67,30 +65,33 @@ class Client(object):
                     i = 0
                     break
             supreme_dict[string[i]]["count"] += 1
-            print("Server Chosen: ", string[i])
-            print("Total Clients in the queue:", string[i], " : ", len(dictionary_of_server[string[i]].servers.queue))
-            print("Total clients in server " + string[i] + " : " + str(supreme_dict[string[i]]["count"]-1))
+            #print("Server Chosen: ", string[i])
+            #print("Total Clients in the queue:", string[i], " : ", len(dictionary_of_server[string[i]].servers.queue))
+            #print("Total clients in server " + string[i] + " : " + str(dictionary_of_server[string[i]].servers.count))
             if supreme_dict[string[i]]["count"] == MAX_CLIENT - 1:
                 for j in nearest_servers(string[i]):
                     if supreme_dict[j]["online"] is False:
                         supreme_dict[j]["online"] = True
-                        print("Server", j, "went back online triggered by server", string[i])
+                        #print("Server", j, "went back online triggered by server", string[i])
                         supreme_dict[j]["last_update"] = self.env.now
                         break
             roundtrip = RTT(string[i], self.nation) / (3 * 10e5)  # Latency due to RTT
-            latency = random.randint(10, 100) * 10e-3  # Latency of the server
-            print("Latency to reach the server: ", round(latency+roundtrip, 5))
-            yield self.env.timeout(roundtrip + latency)
+            #print("RTT to reach the server: ", round(roundtrip, 5))
+            yield self.env.timeout(roundtrip)
             # The client goes to the first server to be served ,now is changed
             # until env.process is complete
             serve_customer = env.process(
                 dictionary_of_server[string[i]].serve(self.nation, j, self.client_id, pack_dim))
             yield serve_customer
             supreme_dict[string[i]]["count"] -= 1
+            yield self.env.timeout(roundtrip)
 
         self.response_time = self.env.now - time_arrival
-        print("client", self.client_id, "from ", self.nation, "response time ", self.response_time)
+        nation_stats[self.nation] += 1
+        nation_stats["total"] += 1
+        #print("client", self.client_id, "from ", self.nation, "response time ", self.response_time)
         stats.push(self.response_time)
+        stats_dict[self.nation].push(self.response_time)
 
 
 class Servers(object):
@@ -105,17 +106,17 @@ class Servers(object):
     def serve(self, name_client, req, client, pack_dim):
 
         # request a server
-        with self.servers.request() as request:  # create obj then destroy
-            yield request
-
-            name_request = "client_" + str(client) + "_req_" + str(req)
+        with self.servers.request() as request:
+            yield request # create obj then destroy
+            latency = random.randint(1, 10) * 10e-3  # Latency of the server
             servers_arrival[self.name_server].succeed()
             servers_arrival[self.name_server] = self.env.event()
+            name_request = "client_" + str(client) + "_req_" + str(req)
             now = self.env.now
             shared_capacity = self.capacity / self.servers.count
             service_time = pack_dim / shared_capacity
-            print("shared capacity for", name_request, " : ", shared_capacity)
-            print("service time for", name_request, " : ", service_time, "Request arrived at the server at: ", round(self.env.now, 5))
+            #print("shared capacity for", name_request, " : ", shared_capacity)
+            #print("service time for", name_request, " : ", service_time, "Request arrived at the server at: ", round(self.env.now, 10))
             supreme_dict[self.name_server]["current_requests"][name_request] = [service_time, shared_capacity, pack_dim,
                                                                                 now]
             go = False
@@ -126,14 +127,16 @@ class Servers(object):
                 supreme_dict[self.name_server]["current_requests"][name_request] = \
                 new_supreme_dict[self.name_server]["current_requests"][name_request]
                 service_time = supreme_dict[self.name_server]["current_requests"][name_request][0]
-
-                yield self.env.timeout(service_time) | servers_arrival[self.name_server] | servers_departure[self.name_server]
-                if round((self.env.now - now), 5) < round(service_time, 5):
-                    print("A new client arrived or just went away, update needed for: ", name_request)
-                else:
+                b = servers_arrival[self.name_server]
+                c = servers_departure[self.name_server]
+                r = yield self.env.timeout(service_time) | b | c
+                if b not in r and c not in r:
                     go = True
-            print("The service time for client", name_request, "was ", round(service_time, 5))
-            print("The client left the server in ", round(self.env.now - now, 5))
+                    #print("A new client arrived or just went away from server ", self.name_server, "update needed for: ", name_request)
+            yield self.env.timeout(latency)
+            #print("The client left the server in ", round(self.env.now - now, 10))
+
+
 
         servers_departure[self.name_server].succeed()
         servers_departure[self.name_server] = self.env.event()
@@ -145,7 +148,7 @@ class Servers(object):
         del supreme_dict[self.name_server]["current_requests"][name_request]
         if self.servers.count == 0 and self.name_server not in never_offline:
             supreme_dict[self.name_server]["online"] = False
-            print("Server", self.name_server, "went offline")
+            #print("Server", self.name_server, "went offline")
 
 
 if __name__ == '__main__':
@@ -160,13 +163,13 @@ if __name__ == '__main__':
     client_id = 1
     random.seed(RANDOM_SEED)  # same sequence each time
 
-    max_capacity = 10e4  # The same for each server
-    response_time = []
+    max_capacity = 10e10  # The same for each server in 10 Gbps
 
-    # create lambda clients
-    # for i in range(1, lambd):
     env = simpy.Environment()
     stats = Statistics()
+    stats_dict = {}
+    for i in supreme_dict.keys():
+        stats_dict[i] = Statistics()
     # servers
     dictionary_of_server = {}
     for i in supreme_dict.keys():
@@ -187,10 +190,14 @@ if __name__ == '__main__':
         env.process(arrival(environment=env, nation=i, arrival_rate=arrival_rate_global * arrival_nations[i]))
     # simulate until SIM_TIME
     env.run(until=SIM_TIME)  # the run process starts waiting for it to finish
-    response_time.append(stats.mean())
+    avg_response = stats.mean()
+    dictionary_stats_nation = {}
+    for i in supreme_dict.keys():
+        dictionary_stats_nation[i] = stats_dict[i].mean()
     print(nation_stats)
 
 # totally occupied servers in this case
 # we need parallel servers for example 5 servers for 5 continents
+
 
 
