@@ -14,7 +14,6 @@ SIM_TIME = 24*60*60  # 24 for each day
 total_users = 765367947 + 451347554 + 244090854 + 141206801 + 115845120
 arrival_rate_global = 10  # 100%, and after will be used to define the rate of arrival of each country
 nation_stats = {"china": 0, "usa": 0, "india": 0, "brazil": 0, "japan": 0, "total": 0}
-never_offline = ["usa", "india"]
 
 
 def arrival(environment, nation, arrival_rate):
@@ -184,8 +183,5 @@ if __name__ == '__main__':
     for i in supreme_dict.keys():
         dictionary_stats_nation[i] = stats_dict[i].mean()
     print(nation_stats)
-
-
-
 
 
